@@ -272,7 +272,6 @@ void emulator(SDL_Window *win, const char *romPath) {
     SDL_DestroyRenderer(rend);
     return;
   }
-  memset(emuRAM,0, 0xFFFF);
   FILE *fp = fopen(romPath, "r");
   if (!fp) {
     PMError("unable to open file input\n");
@@ -286,6 +285,7 @@ void emulator(SDL_Window *win, const char *romPath) {
   /* int fd = fp->_file;
   ssize_t bytesRead = read(fd, emuRAM, binarySize); */
   size_t bytesRead = fread(emuRAM, 1, binarySize, fp);
+  memset(emuRAM + binarySize, 0, 0xFFFF);
   fclose(fp);
   if (bytesRead < binarySize) {
     PMError("failed to read entire file, read %zd, expected %zu\n",bytesRead,binarySize);
