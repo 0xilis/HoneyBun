@@ -22,11 +22,9 @@
 
 /* Global variables */
 SDL_Renderer* rend;
-char *vram;
 int running = 1;
 uint8_t *emuRAM;
 uint16_t ri; /* The 16-bit register I */
-uint16_t stack[16];
 uint8_t keyPressed = 0;
 int cycle = 1;
 
@@ -58,37 +56,6 @@ void set_flag(uint8_t flag, int condition) {
 
 int get_flag(uint8_t flag) {
     return (af & flag) ? 1 : 0;
-}
-
-int draw_pixel(int x, int y) {
-    /* Support 128x64 later */
-    int SCREEN_WIDTH = 64;
-    int SCREEN_HEIGHT = 64;
-    /* Like a CRT, each line from left to right then another line */
-    int pixelId = (y * SCREEN_WIDTH) + x;
-    char pixel = vram[pixelId];
-    int pixelDrew;
-    if (pixel) {
-        /* Pixel set on, turn it off! */
-        SDL_SetRenderDrawColor(rend, 0, 0, 0, 255);
-        pixelDrew = 0;
-    } else {
-        /* Pixel set off, turn it on! */
-        SDL_SetRenderDrawColor(rend, 255, 255, 255, 255);
-        pixelDrew = 1;
-    }
-    vram[pixelId] = pixelDrew;
-    SDL_RenderDrawPoint(rend, x, y);
-    return pixelDrew;
-}
-
-void cls(void) {
-    /* Support 128x64 later */
-    int SCREEN_WIDTH = 64;
-    int SCREEN_HEIGHT = 64;
-    memset(vram,0, SCREEN_WIDTH * SCREEN_HEIGHT);
-    SDL_SetRenderDrawColor(rend, 0, 0, 0, 255);
-    SDL_RenderClear(rend);
 }
 
 void render(void) {
@@ -801,27 +768,17 @@ void emulator(SDL_Window *win, const char *romPath) {
     int SCREEN_WIDTH = 160;
     int SCREEN_HEIGHT = 144;
     SDL_RenderSetLogicalSize(rend, SCREEN_WIDTH, SCREEN_HEIGHT);
-    vram = malloc(SCREEN_WIDTH * SCREEN_HEIGHT);
-    if (!vram) {
-        PMError("unable to allocate the 8KB VRAM\n");
-        SDL_DestroyRenderer(rend);
-        return;
-    }
-    /* initialize the initial vram to be all black at first. */
-    memset(vram, 0, SCREEN_WIDTH * SCREEN_HEIGHT);
   
     /* Load ROM into 64KB memory */
     emuRAM = malloc(0xFFFF);
     if (!emuRAM) {
         PMError("unable to allocate the 64KB emuRAM\n");
-        free(vram);
         SDL_DestroyRenderer(rend);
         return;
     }
     FILE *fp = fopen(romPath, "r");
     if (!fp) {
         PMError("unable to open file input\n");
-        free(vram);
         SDL_DestroyRenderer(rend);
         return;
     }
@@ -877,7 +834,6 @@ void emulator(SDL_Window *win, const char *romPath) {
     /* Cleanup */
     cleanup:
     free(emuRAM);
-    free(vram);
     SDL_DestroyRenderer(rend);
     printf("ended emulation.\n");
 }
