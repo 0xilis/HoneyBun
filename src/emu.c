@@ -858,6 +858,13 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x58: /* LD E, B */
+            {
+                uint8_t b = (bc >> 8) & 0xFF;
+                de = (de & 0xFF00) | b;
+            }
+            return 4;
+
         case 0x59: /* LD E, C */
             {
                 uint8_t c = bc & 0xFF;
@@ -937,6 +944,13 @@ int execute_instruction(void) {
             {
                 uint8_t h = (hl >> 8) & 0xFF;
                 emuRAM[hl] = h; /* Store H at the memory address pointed to by HL */
+            }
+            return 8;
+
+        case 0x75: /* LD [HL], L */
+            {
+                uint8_t l = hl & 0xFF;
+                emuRAM[hl] = l; /* Store L at the memory address pointed to by HL */
             }
             return 8;
 
@@ -1085,6 +1099,22 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x88: /* ADC A, B */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t b = (bc >> 8) & 0xFF;
+                uint8_t carry = get_flag(C_FLAG);
+                uint16_t result = a + b + carry;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, ((a & 0x0F) + (b & 0x0F) + carry > 0x0F));
+                set_flag(C_FLAG, result > 0xFF);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
+            }
+            return 4;
+
         case 0x8C: /* ADC A, H */
             {
                 uint8_t a = (af >> 8) & 0xFF;
@@ -1192,6 +1222,35 @@ int execute_instruction(void) {
                 set_flag(H_FLAG, (a & 0x0F) < (l & 0x0F));
                 set_flag(C_FLAG, a < l);
                 af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x96: /* SUB A, [HL] */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t value = emuRAM[hl];
+                uint16_t result = a - value;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, ((a & 0x0F) < (value & 0x0F)));
+                set_flag(C_FLAG, a < value);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
+            }
+            return 8;
+
+        case 0x97: /* SUB A, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint16_t result = a - a;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, 0);
+                set_flag(C_FLAG, 0);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
             }
             return 4;
 
@@ -1396,6 +1455,19 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0xBA: /* CP A, D */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t d = (de >> 8) & 0xFF;
+                uint8_t result = a - d;
+
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, ((a & 0x0F) < (d & 0x0F)));
+                set_flag(C_FLAG, a < d);
+            }
+            return 4;
+
         case 0xBE: /* CP A, [HL] */
             {
                 uint8_t a = (af >> 8) & 0xFF;
@@ -1444,6 +1516,24 @@ int execute_instruction(void) {
         case 0xC3: /* JP a16 */
             pc = (emuRAM[pc + 1] << 8) | emuRAM[pc];
             return 16;
+
+        case 0xC4: /* CALL NZ, a16 */
+            {
+                uint16_t address = emuRAM[pc] | (emuRAM[pc + 1] << 8);
+                pc += 2;
+
+                if (!get_flag(Z_FLAG)) {
+                    /* Push current PC onto the stack */
+                    sp -= 2;
+                    emuRAM[sp] = pc & 0xFF;
+                    emuRAM[sp + 1] = (pc >> 8) & 0xFF;
+
+                    pc = address;
+                    return 24;
+                } else {
+                    return 12;
+                }
+            }
 
         case 0xC5: /* PUSH BC */
             {
@@ -1505,6 +1595,38 @@ int execute_instruction(void) {
                 printf("CB instr: %02x (%02x)\n", cb_instr, pc);
 
                 switch (cb_instr) {
+                    case 0x18: /* RR B */
+                        {
+                            uint8_t b = (bc >> 8) & 0xFF;
+                            uint8_t old_carry = get_flag(C_FLAG);
+                            uint8_t new_carry = b & 0x01;
+                            b = (b >> 1) | (old_carry << 7);
+
+                            set_flag(C_FLAG, new_carry);
+                            set_flag(Z_FLAG, b == 0);
+                            set_flag(N_FLAG, 0);
+                            set_flag(H_FLAG, 0);
+
+                            bc = (b << 8) | (bc & 0x00FF);
+                        }
+                        return 8;
+
+                    case 0x1A: /* RR D */
+                        {
+                            uint8_t d = (de >> 8) & 0xFF;
+                            uint8_t old_carry = get_flag(C_FLAG);
+                            uint8_t new_carry = d & 0x01;
+                            d = (d >> 1) | (old_carry << 7);
+
+                            set_flag(C_FLAG, new_carry);
+                            set_flag(Z_FLAG, d == 0);
+                            set_flag(N_FLAG, 0);
+                            set_flag(H_FLAG, 0);
+
+                            de = (d << 8) | (de & 0x00FF);
+                        }
+                        return 8;
+
                     case 0x37: /* SWAP A */
                         {
                             uint8_t a = (af >> 8) & 0xFF;
@@ -1605,6 +1727,19 @@ int execute_instruction(void) {
                 pc = 0x08;
             }
             return 16;
+
+        case 0xD0: /* RET NC */
+            {
+                if (!get_flag(C_FLAG)) {
+                    /* Pop return address from stack */
+                    uint16_t return_addr = emuRAM[sp] | (emuRAM[sp + 1] << 8);
+                    sp += 2;
+                    pc = return_addr;
+                    return 20;
+                } else {
+                    return 8;
+                }
+            }
 
         case 0xD1: /* POP DE */
             {
