@@ -20,6 +20,11 @@
 #include "resource_management.h"
 #include "defs.h"
 
+/* Cartridge Size, min 0xFFFF */
+#define CART_SIZE 0x1FFFFF
+
+#define CONTINUE_INVALID_OPCODE 0
+
 /* Global variables */
 SDL_Renderer* rend;
 int running = 1;
@@ -771,6 +776,11 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x40: /* LD B, B */
+            /* TODO: This is stupid */
+            printf("called 40 instruction\n");
+            return 4;
+
         case 0x42: /* LD B, D */
             {
                 uint8_t d = (de >> 8) & 0xFF;
@@ -876,12 +886,31 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x60: /* LD H, B */
+            {
+                uint8_t b = (bc >> 8) & 0xFF;
+                hl = (hl & 0x00FF) | (b << 8);
+            }
+            return 4;
+
         case 0x66: /* LD H, [HL] */
             {
                 uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
                 hl = (value << 8) | (hl & 0x00FF); /* Load value into H */
             }
             return 8;
+
+        case 0x6B: /* LD H, E */
+            {
+                uint8_t e = de & 0xFF;
+                hl = (hl & 0x00FF) | (e << 8);
+            }
+            return 4;
+
+        case 0x6D: /* LD L, L */
+            /* TODO: This is stupid */
+            printf("called 6d instruction\n");
+            return 4;
 
         case 0x6E: /* LD L, [HL] */
             {
@@ -929,6 +958,13 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x7A: /* LD A, D */
+            {
+                uint8_t d = (de >> 8) & 0xFF;
+                af = (af & 0x00FF) | (d << 8);
+            }
+            return 4;
+
         case 0x7B: /* LD A, E */
             af = (af & 0x00FF) | ((de & 0xFF) << 8);
             return 4;
@@ -953,6 +989,11 @@ int execute_instruction(void) {
                 af = (value << 8) | (af & 0x00FF); /* Load value into A */
             }
             return 8;
+
+        case 0x7F: /* LD A, A */
+            /* TODO: This is stupid */
+            printf("called 7f instruction\n");
+            return 4;
 
         case 0x80: /* ADD A, B */
             {
@@ -1043,6 +1084,38 @@ int execute_instruction(void) {
                 af = (result << 8) | (af & 0x00FF); /* Update A register */
             }
             return 4;
+
+        case 0x8C: /* ADC A, H */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t h = (hl >> 8) & 0xFF;
+                uint8_t carry = get_flag(C_FLAG);
+                uint16_t result = a + h + carry;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, ((a & 0x0F) + (h & 0x0F) + carry > 0x0F));
+                set_flag(C_FLAG, result > 0xFF);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
+            }
+            return 4;
+
+        case 0x8E: /* ADC A, [HL] */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t value = emuRAM[hl];
+                uint8_t carry = get_flag(C_FLAG);
+                uint16_t result = a + value + carry;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, ((a & 0x0F) + (value & 0x0F) + carry > 0x0F));
+                set_flag(C_FLAG, result > 0xFF);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
+            }
+            return 8;
 
         case 0x90: /* SUB B */
             {
@@ -1349,11 +1422,24 @@ int execute_instruction(void) {
 
         case 0xC1: /* POP BC */
             {
-                uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8); /* Read 16-bit value from stack */
-                sp += 2; /* Increment stack pointer */
-                bc = value; /* Load value into HL */
+                uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8);
+                sp += 2;
+                bc = value;
             }
             return 12;
+
+        case 0xC2: /* JP NZ, a16 */
+            {
+                uint16_t address = emuRAM[pc] | (emuRAM[pc + 1] << 8);
+                pc += 2;
+
+                if (!get_flag(Z_FLAG)) {
+                    pc = address;
+                    return 16;
+                } else {
+                    return 12;
+                }
+            }
 
         case 0xC3: /* JP a16 */
             pc = (emuRAM[pc + 1] << 8) | emuRAM[pc];
@@ -1443,6 +1529,28 @@ int execute_instruction(void) {
                         }
                         return 8;
 
+                    case 0x42: /* BIT 0, D */
+                        {
+                            uint8_t d = (de >> 8) & 0xFF;
+                            uint8_t bit = (d >> 0) & 0x01;
+
+                            set_flag(Z_FLAG, bit == 0);
+                            set_flag(N_FLAG, 0);
+                            set_flag(H_FLAG, 1);
+                        }
+                        return 8;
+
+                    case 0x77: /* BIT 6, A */
+                        {
+                            uint8_t a = (af >> 8) & 0xFF;
+                            uint8_t bit = (a >> 6) & 0x01;
+
+                            set_flag(Z_FLAG, bit == 0);
+                            set_flag(N_FLAG, 0);
+                            set_flag(H_FLAG, 1);
+                        }
+                        return 8;
+
                     case 0x87: /* RES 0, A */
                         {
                             uint8_t a = (af >> 8) & 0xFF;  /* Extract the A register */
@@ -1461,7 +1569,11 @@ int execute_instruction(void) {
 
                     default:
                         printf("Unrecognized CB opcode: %02x at %04x\n", cb_instr, pc - 1);
+                        #if CONTINUE_INVALID_OPCODE
+                        return 4;
+                        #else
                         exit(1);
+                        #endif
                 }
             }
 
@@ -1512,6 +1624,22 @@ int execute_instruction(void) {
                 emuRAM[sp + 1] = (de >> 8) & 0xFF; /* Push high byte (D) */
             }
             return 16;
+
+        case 0xD6: /* SUB A, n8 */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t n8 = emuRAM[pc];
+                pc++;
+                uint16_t result = a - n8;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, ((a & 0x0F) < (n8 & 0x0F)));
+                set_flag(C_FLAG, a < n8);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
+            }
+            return 8;
 
         case 0xDE: /* SBC A, n8 */
             {
@@ -1625,6 +1753,14 @@ int execute_instruction(void) {
             }
             return 12;
 
+        case 0xF1: /* POP AF */
+            {
+                uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8);
+                sp += 2;
+                af = value;
+            }
+            return 12;
+
         case 0xF3: /* DI */
             /* Disable interrupts (not implemented yet) */
             interrupts_enabled = 0;
@@ -1701,7 +1837,11 @@ int execute_instruction(void) {
 
         default:
             printf("Unrecognized opcode: %02x at %04x\n", instr, pc - 1);
+#if CONTINUE_INVALID_OPCODE
+            return 4;
+#else
             exit(1);
+#endif
     }
 
     check_interrupts();
@@ -1728,7 +1868,7 @@ void emulator(SDL_Window *win, const char *romPath) {
     SDL_RenderSetLogicalSize(rend, SCREEN_WIDTH, SCREEN_HEIGHT);
   
     /* Load ROM into 64KB memory */
-    emuRAM = malloc(0xFFFF);
+    emuRAM = malloc(CART_SIZE);
     if (!emuRAM) {
         PMError("unable to allocate the 64KB emuRAM\n");
         SDL_DestroyRenderer(rend);
@@ -1744,15 +1884,15 @@ void emulator(SDL_Window *win, const char *romPath) {
     fseek(fp, 0, SEEK_END);
     size_t binarySize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    if (binarySize > 0xFFFF) {
+    if (binarySize > CART_SIZE) {
         PMError("file too large for 64KB emuRAM\n");
         free(emuRAM);
         SDL_DestroyRenderer(rend);
         return;
     }
     size_t bytesRead = fread(emuRAM, 1, binarySize, fp);
-    if (binarySize != 0xFFFF) {
-        memset(emuRAM + binarySize, 0, 0xFFFF - binarySize);
+    if (binarySize != CART_SIZE) {
+        memset(emuRAM + binarySize, 0, CART_SIZE - binarySize);
     }
     fclose(fp);
     if (bytesRead < binarySize) {
