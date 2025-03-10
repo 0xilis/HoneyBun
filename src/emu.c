@@ -220,14 +220,14 @@ uint16_t signal_function_ret() {
 
 int execute_instruction(void) {
     if (!cycle) {
-        return 0; // Emulation is paused
+        return 0; /* Emulation is paused */
     }
 
     /* Fetch and execute instruction */
     /* https://gbdev.io/gb-opcodes/optables/ */
     uint8_t instr = emuRAM[pc];
     pc++;
-    printf("instr: %02x (%02x)\n", instr, pc);
+    /* printf("instr: %02x (%02x)\n", instr, pc); */
 
     switch (instr) {
         case 0x00: /* NOP */
@@ -277,6 +277,16 @@ int execute_instruction(void) {
             pc++;
             return 8;
 
+        case 0x09: /* ADD HL, BC */
+            {
+                uint32_t result = hl + bc;
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (hl & 0x0FFF) + (bc & 0x0FFF) > 0x0FFF);
+                set_flag(C_FLAG, result > 0xFFFF);
+                hl = result & 0xFFFF; /* Store lower 16 bits in HL */
+            }
+            return 8;
+
         case 0x0B: /* DEC BC */
             bc--;
             return 8;
@@ -311,6 +321,12 @@ int execute_instruction(void) {
             de = (emuRAM[pc + 1] << 8) | emuRAM[pc];
             pc += 2;
             return 12;
+
+        case 0x12: /* LD [DE], A */
+            {
+                emuRAM[de] = (af >> 8) & 0xFF; /* Store A at the address in BC */
+            }
+            return 8;
 
         case 0x13: /* INC DE */
             de++;
@@ -353,6 +369,16 @@ int execute_instruction(void) {
                 pc += e8; /* This will jump relative to the current program counter */
             }
             return 12;
+
+        case 0x19: /* ADD HL, DE */
+            {
+                uint32_t result = hl + de;
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (hl & 0x0FFF) + (de & 0x0FFF) > 0x0FFF);
+                set_flag(C_FLAG, result > 0xFFFF);
+                hl = result & 0xFFFF; /* Store lower 16 bits in HL */
+            }
+            return 8;
 
         case 0x1A: /* LD A, [DE] */
             af = (af & 0x00FF) | (emuRAM[de] << 8);
@@ -429,6 +455,16 @@ int execute_instruction(void) {
                 uint8_t n8 = emuRAM[pc];
                 pc++;
                 hl = (hl & 0x00FF) | (n8 << 8);
+            }
+            return 8;
+
+        case 0x29: /* ADD HL, HL */
+            {
+                uint32_t result = hl + hl;
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (hl & 0x0FFF) + (hl & 0x0FFF) > 0x0FFF);
+                set_flag(C_FLAG, result > 0xFFFF);
+                hl = result & 0xFFFF; /* Store lower 16 bits in HL */
             }
             return 8;
 
@@ -525,6 +561,16 @@ int execute_instruction(void) {
             }
             return 12;
 
+        case 0x39: /* ADD HL, SP */
+            {
+                uint32_t result = hl + sp;
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (hl & 0x0FFF) + (sp & 0x0FFF) > 0x0FFF);
+                set_flag(C_FLAG, result > 0xFFFF);
+                hl = result & 0xFFFF; /* Store lower 16 bits in HL */
+            }
+            return 8;
+
         case 0x3B: /* DEC SP */
             sp--;
             return 8;
@@ -554,6 +600,120 @@ int execute_instruction(void) {
             pc++;
             return 8;
 
+        case 0x3F: /* CCF */
+            {
+                uint8_t current_c_flag = get_flag(C_FLAG);
+                set_flag(C_FLAG, !current_c_flag); /* Complement the carry flag */
+                set_flag(N_FLAG, 0); /* Reset the subtract flag */
+                set_flag(H_FLAG, 0); /* Reset the half-carry flag */
+            }
+            return 4;
+
+        case 0x42: /* LD B, D */
+            {
+                uint8_t d = (de >> 8) & 0xFF;
+                bc = (bc & 0x00FF) | (d << 8);
+            }
+            return 4;
+
+        case 0x44: /* LD B, H */
+            {
+                uint8_t h = (hl >> 8) & 0xFF;
+                bc = (bc & 0x00FF) | (h << 8);
+            }
+            return 4;
+
+        case 0x46: /* LD B, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                bc = (value << 8) | (bc & 0x00FF); /* Load value into B */
+            }
+            return 8;
+
+        case 0x47: /* LD B, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                bc = (bc & 0x00FF) | (a << 8);
+            }
+            return 4;
+
+        case 0x4E: /* LD C, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                bc = (bc & 0xFF00) | value; /* Load value into C */
+            }
+            return 8;
+
+        case 0x4F: /* LD C, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                bc = (bc & 0xFF00) | a;
+            }
+            return 4;
+
+        case 0x50: /* LD D, B */
+            {
+                uint8_t b = (bc >> 8) & 0xFF;
+                de = (de & 0x00FF) | (b << 8);
+            }
+            return 4;
+
+        case 0x54: /* LD D, H */
+            {
+                uint8_t h = (hl >> 8) & 0xFF;
+                de = (de & 0x00FF) | (h << 8);
+            }
+            return 4;
+
+        case 0x56: /* LD D, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                de = (value << 8) | (de & 0x00FF); /* Load value into D */
+            }
+            return 8;
+
+        case 0x57: /* LD D, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                de = (de & 0x00FF) | (a << 8);
+            }
+            return 4;
+
+        case 0x5E: /* LD E, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                de = (de & 0xFF00) | value; /* Load value into E */
+            }
+            return 8;
+
+        case 0x5F: /* LD E, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                de = (de & 0xFF00) | a;
+            }
+            return 4;
+
+        case 0x66: /* LD H, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                hl = (value << 8) | (hl & 0x00FF); /* Load value into H */
+            }
+            return 8;
+
+        case 0x6E: /* LD L, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                hl = (hl & 0xFF00) | value; /* Load value into L */
+            }
+            return 8;
+
+        case 0x6F: /* LD L, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                hl = (hl & 0xFF00) | a;
+            }
+            return 4;
+
         case 0x77: /* LD [HL], A */
             emuRAM[hl] = (af >> 8) & 0xFF;
             return 8;
@@ -565,9 +725,23 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x79: /* LD A, C */
+            {
+                uint8_t c = bc & 0xFF;
+                af = (af & 0x00FF) | (c << 8);
+            }
+            return 4;
+
         case 0x7B: /* LD A, E */
             af = (af & 0x00FF) | ((de & 0xFF) << 8);
             return 4;
+
+        case 0x7E: /* LD A, [HL] */
+            {
+                uint8_t value = emuRAM[hl]; /* Read value from memory at address HL */
+                af = (value << 8) | (af & 0x00FF); /* Load value into A */
+            }
+            return 8;
 
         case 0x80: /* ADD A, B */
             {
@@ -647,6 +821,18 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x87: /* ADD A, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t result = a + a;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (a & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a); /* Carry if result overflows */
+                af = (result << 8) | (af & 0x00FF); /* Update A register */
+            }
+            return 4;
+
         case 0x90: /* SUB B */
             {
                 uint8_t a = (af >> 8) & 0xFF;
@@ -684,7 +870,7 @@ int execute_instruction(void) {
                 set_flag(C_FLAG, a < d);
                 af = (af & 0x00FF) | (result << 8);
             }
-            return 4; // 4 cycles
+            return 4;
 
         case 0x93: /* SUB A, E */
             {
@@ -725,6 +911,32 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0xA0: /* AND A, B */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t b = (bc >> 8) & 0xFF;
+                uint8_t result = a & b;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, 1);
+                set_flag(C_FLAG, 0);
+                af = (result << 8) | (af & 0x00FF); /* Update A register */
+            }
+            return 4;
+
+        case 0xA1: /* AND A, C */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t c = bc & 0xFF;
+                uint8_t result = a & c;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, 1);
+                set_flag(C_FLAG, 0);
+                af = (result << 8) | (af & 0x00FF); /* Update A register */
+            }
+            return 4;
+
         case 0xA7: /* AND A, A */
             {
                 uint8_t a = (af >> 8) & 0xFF;
@@ -737,6 +949,19 @@ int execute_instruction(void) {
                 set_flag(N_FLAG, 0);
                 set_flag(H_FLAG, 1);
                 set_flag(C_FLAG, 0);
+            }
+            return 4;
+
+        case 0xA9: /* XOR A, C */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t c = bc & 0xFF;
+                uint8_t result = a ^ c;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, 0);
+                set_flag(C_FLAG, 0);
+                af = (result << 8) | (af & 0x00FF); /* Update A register */
             }
             return 4;
 
@@ -793,9 +1018,52 @@ int execute_instruction(void) {
             set_flag(C_FLAG, 0);
             return 4;
 
+        case 0xBF: /* CP A, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t result = a - a; /* A - A */
+                set_flag(Z_FLAG, result == 0); /* Always true */
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, 0);
+                set_flag(C_FLAG, 0);
+            }
+            return 4;
+
+        case 0xC1: /* POP BC */
+            {
+                uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8); /* Read 16-bit value from stack */
+                sp += 2; /* Increment stack pointer */
+                bc = value; /* Load value into HL */
+            }
+            return 12;
+
         case 0xC3: /* JP a16 */
             pc = (emuRAM[pc + 1] << 8) | emuRAM[pc];
             return 16;
+
+        case 0xC5: /* PUSH BC */
+            {
+                /* Decrement stack pointer by 2 */
+                sp -= 2;
+
+                /* Push DE onto the stack */
+                emuRAM[sp] = bc & 0xFF;         /* Push low byte (C) */
+                emuRAM[sp + 1] = (bc >> 8) & 0xFF; /* Push high byte (B) */
+            }
+            return 16;
+
+        case 0xC8: /* RET Z */
+            {
+                if (get_flag(Z_FLAG)) {
+                    /* Pop return address from stack */
+                    uint16_t return_addr = emuRAM[sp] | (emuRAM[sp + 1] << 8);
+                    sp += 2; /* Increment stack pointer */
+                    pc = return_addr; /* Jump to return address */
+                    return 20;
+                } else {
+                    return 8;
+                }
+            }
 
         case 0xC9: /* RET */
             {
@@ -809,6 +1077,59 @@ int execute_instruction(void) {
                 pc = signal_function_ret();
             }
             return 16;
+
+        case 0xCB: /* PREFIX */
+            {
+                uint8_t cb_instr = emuRAM[pc];
+                pc++;
+                printf("CB instr: %02x (%02x)\n", cb_instr, pc);
+
+                switch (cb_instr) {
+                    case 0x37: /* SWAP A */
+                        {
+                            uint8_t a = (af >> 8) & 0xFF;
+                            uint8_t swapped_a = ((a & 0x0F) << 4) | ((a & 0xF0) >> 4);
+                            set_flag(Z_FLAG, swapped_a == 0);
+                            set_flag(N_FLAG, 0);
+                            set_flag(H_FLAG, 0);
+                            set_flag(C_FLAG, 0);
+                            af = (swapped_a << 8) | (af & 0x00FF);
+                        }
+                        return 8;
+
+                    case 0x3F: /* SRL A */
+                        {
+                            uint8_t a = (af >> 8) & 0xFF; /* Extract A from the AF register */
+                            uint8_t shifted_a = a >> 1; /* Perform the logical right shift */
+                            set_flag(C_FLAG, a & 0x01); /* Set carry flag to the bit shifted out (LSB) */
+                            set_flag(Z_FLAG, shifted_a == 0); /* Set zero flag if the result is zero */
+                            set_flag(N_FLAG, 0); /* Reset subtract flag */
+                            set_flag(H_FLAG, 0); /* Reset half-carry flag */
+                            af = (shifted_a << 8) | (af & 0x00FF); /* Update A in the AF register */
+                        }
+                        return 8;
+
+                    case 0x87: /* RES 0, A */
+                        {
+                            uint8_t a = (af >> 8) & 0xFF;  /* Extract the A register */
+                            a &= ~(1 << 0);  /* Clear bit 0 (reset the bit) */
+                            af = (a << 8) | (af & 0x00FF);  /* Update the A register in the AF pair */
+                        }
+                        return 8;
+
+                    case 0xBF: /* RES 7, A */
+                        {
+                            uint8_t a = (af >> 8) & 0xFF;
+                            a &= ~(1 << 7); /* Clear bit 7 */
+                            af = (a << 8) | (af & 0x00FF); /* Update A register */
+                        }
+                        return 8;
+
+                    default:
+                        printf("Unrecognized CB opcode: %02x at %04x\n", cb_instr, pc - 1);
+                        exit(1);
+                }
+            }
 
         case 0xCD: /* CALL a16 */
             {
@@ -827,6 +1148,25 @@ int execute_instruction(void) {
             }
             return 24;
 
+        case 0xD1: /* POP DE */
+            {
+                uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8); /* Read 16-bit value from stack */
+                sp += 2; /* Increment stack pointer */
+                de = value; /* Load value into HL */
+            }
+            return 12;
+
+        case 0xD5: /* PUSH DE */
+            {
+                /* Decrement stack pointer by 2 */
+                sp -= 2;
+
+                /* Push DE onto the stack */
+                emuRAM[sp] = de & 0xFF;         /* Push low byte (E) */
+                emuRAM[sp + 1] = (de >> 8) & 0xFF; /* Push high byte (D) */
+            }
+            return 16;
+
         case 0xE0: /* LDH [a8], A */
             {
                 uint8_t a8 = emuRAM[pc]; /* Read the 8-bit immediate value */
@@ -836,12 +1176,31 @@ int execute_instruction(void) {
             }
             return 12;
 
+        case 0xE1: /* POP HL */
+            {
+                uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8); /* Read 16-bit value from stack */
+                sp += 2; /* Increment stack pointer */
+                hl = value; /* Load value into HL */
+            }
+            return 12;
+
         case 0xE2: /* LDH [C], A */
             {
                 uint16_t addr = 0xFF00 + (bc & 0xFF); /* Calculate the address (0xFF00 + C) */
                 emuRAM[addr] = (af >> 8) & 0xFF; /* Store A at the address */
             }
             return 8;
+
+        case 0xE5: /* PUSH HL */
+            {
+                /* Decrement stack pointer by 2 */
+                sp -= 2;
+
+                /* Push DE onto the stack */
+                emuRAM[sp] = hl & 0xFF;         /* Push low byte (L) */
+                emuRAM[sp + 1] = (hl >> 8) & 0xFF; /* Push high byte (H) */
+            }
+            return 16;
 
         case 0xE6: /* AND A, n8 */
             {
@@ -865,6 +1224,22 @@ int execute_instruction(void) {
             }
             return 16;
 
+        case 0xE9: /* JP HL */
+            pc = hl;
+            return 4; 
+
+        case 0xEF: /* RST $28 */
+            {
+                /* Decrement stack pointer and push current PC onto the stack */
+                sp -= 2;
+                emuRAM[sp] = pc & 0xFF;         /* Push low byte of PC */
+                emuRAM[sp + 1] = (pc >> 8) & 0xFF; /* Push high byte of PC */
+
+                /* Jump to address 0x28 */
+                pc = 0x28;
+            }
+            return 16;
+
         case 0xF0: /* LDH A, [a8] */
             {
                 uint8_t a8 = emuRAM[pc]; /* Read the 8-bit immediate value */
@@ -879,6 +1254,17 @@ int execute_instruction(void) {
             /* Disable interrupts (not implemented yet) */
             interrupts_enabled = 0;
             return 4;
+
+        case 0xF5: /* PUSH AF */
+            {
+                /* Decrement stack pointer by 2 */
+                sp -= 2;
+
+                /* Push AF onto the stack */
+                emuRAM[sp] = af & 0xFF;         /* Push low byte (F) */
+                emuRAM[sp + 1] = (af >> 8) & 0xFF; /* Push high byte (A) */
+            }
+            return 16;
 
         case 0xFA: /* LD A, [a16] */
             {
@@ -946,14 +1332,19 @@ void emulator(SDL_Window *win, const char *romPath) {
     FILE *fp = fopen(romPath, "r");
     if (!fp) {
         PMError("unable to open file input\n");
+        free(emuRAM);
         SDL_DestroyRenderer(rend);
         return;
     }
     fseek(fp, 0, SEEK_END);
     size_t binarySize = ftell(fp);
     fseek(fp, 0, SEEK_SET);
-    /* int fd = fp->_file;
-    ssize_t bytesRead = read(fd, emuRAM, binarySize); */
+    if (binarySize > 0xFFFF) {
+        PMError("file too large for 64KB emuRAM\n");
+        free(emuRAM);
+        SDL_DestroyRenderer(rend);
+        return;
+    }
     size_t bytesRead = fread(emuRAM, 1, binarySize, fp);
     if (binarySize != 0xFFFF) {
         memset(emuRAM + binarySize, 0, 0xFFFF - binarySize);
