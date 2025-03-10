@@ -227,7 +227,7 @@ int execute_instruction(void) {
     /* https://gbdev.io/gb-opcodes/optables/ */
     uint8_t instr = emuRAM[pc];
     pc++;
-    /*printf("instr: %02x (%02x)\n", instr, pc);*/
+    printf("instr: %02x (%02x)\n", instr, pc);
 
     switch (instr) {
         case 0x00: /* NOP */
@@ -461,6 +461,16 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0x2F: /* CPL */
+            {
+                uint8_t a = (af >> 8) & 0xFF; /* Get the value of A */
+                a = ~a; /* Complement A */
+                af = (af & 0x00FF) | (a << 8); /* Store the result in A */
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, 1);
+            }
+            return 4;
+
         case 0x31: /* LD [HL+], A */
             emuRAM[hl] = (af >> 8) & 0xFF;
             hl++;
@@ -559,6 +569,84 @@ int execute_instruction(void) {
             af = (af & 0x00FF) | ((de & 0xFF) << 8);
             return 4;
 
+        case 0x80: /* ADD A, B */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t b = (bc >> 8) & 0xFF;
+                uint8_t result = a + b;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (b & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x81: /* ADD A, C */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t c = bc & 0xFF;
+                uint8_t result = a + c;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (c & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x82: /* ADD A, D */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t d = (de >> 8) & 0xFF;
+                uint8_t result = a + d;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (d & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x83: /* ADD A, E */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t e = de & 0xFF;
+                uint8_t result = a + e;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (e & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x84: /* ADD A, H */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t h = (hl >> 8) & 0xFF;
+                uint8_t result = a + h;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (h & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x85: /* ADD A, L */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t l = hl & 0xFF;
+                uint8_t result = a + l;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, (a & 0x0F) + (l & 0x0F) > 0x0F);
+                set_flag(C_FLAG, result < a);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
         case 0x90: /* SUB B */
             {
                 uint8_t a = (af >> 8) & 0xFF;
@@ -568,6 +656,71 @@ int execute_instruction(void) {
                 set_flag(N_FLAG, 1);
                 set_flag(H_FLAG, (a & 0x0F) < (b & 0x0F));
                 set_flag(C_FLAG, a < b);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x91: /* SUB A, C */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t c = bc & 0xFF;
+                uint8_t result = a - c;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, (a & 0x0F) < (c & 0x0F));
+                set_flag(C_FLAG, a < c);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x92: /* SUB A, D */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t d = (de >> 8) & 0xFF;
+                uint8_t result = a - d;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, (a & 0x0F) < (d & 0x0F));
+                set_flag(C_FLAG, a < d);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4; // 4 cycles
+
+        case 0x93: /* SUB A, E */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t e = de & 0xFF;
+                uint8_t result = a - e;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, (a & 0x0F) < (e & 0x0F));
+                set_flag(C_FLAG, a < e);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x94: /* SUB A, H */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t h = (hl >> 8) & 0xFF;
+                uint8_t result = a - h;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, (a & 0x0F) < (h & 0x0F));
+                set_flag(C_FLAG, a < h);
+                af = (af & 0x00FF) | (result << 8);
+            }
+            return 4;
+
+        case 0x95: /* SUB A, L */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t l = hl & 0xFF;
+                uint8_t result = a - l;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 1);
+                set_flag(H_FLAG, (a & 0x0F) < (l & 0x0F));
+                set_flag(C_FLAG, a < l);
                 af = (af & 0x00FF) | (result << 8);
             }
             return 4;
@@ -687,6 +840,20 @@ int execute_instruction(void) {
             {
                 uint16_t addr = 0xFF00 + (bc & 0xFF); /* Calculate the address (0xFF00 + C) */
                 emuRAM[addr] = (af >> 8) & 0xFF; /* Store A at the address */
+            }
+            return 8;
+
+        case 0xE6: /* AND A, n8 */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t n8 = emuRAM[pc];
+                pc++;
+                uint8_t result = a & n8;
+                set_flag(Z_FLAG, result == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, 1);
+                set_flag(C_FLAG, 0);
+                af = (af & 0x00FF) | (result << 8);
             }
             return 8;
 
