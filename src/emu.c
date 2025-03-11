@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
+#include <stdbool.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_image.h>
@@ -63,7 +64,7 @@ int get_flag(uint8_t flag) {
     return (af & flag) ? 1 : 0;
 }
 
-void render(void) {
+void render_old(void) {
     SDL_SetRenderDrawColor(rend, 0, 0, 0, 255);
     SDL_RenderClear(rend);
 
@@ -122,6 +123,86 @@ void render(void) {
                     SDL_RenderDrawPoint(rend, screenX, screenY);
                 }
             }
+        }
+    }
+
+    SDL_RenderPresent(rend);
+}
+
+void render(void) {
+    SDL_SetRenderDrawColor(rend, 0, 0, 0, 255);
+    SDL_RenderClear(rend);
+
+    /* Game Boy screen dimensions */
+    const int SCREEN_WIDTH = 160;
+    const int SCREEN_HEIGHT = 144;
+
+    /* Tile dimensions */
+    const int TILE_SIZE = 8;
+
+    /* Background map dimensions (32x32 tiles) */
+    const int MAP_WIDTH = 32;
+    const int MAP_HEIGHT = 32;
+
+    /* Get the current scroll registers (SCX and SCY) */
+    uint8_t scx = emuRAM[0xFF43]; /* SCX (Scroll X) */
+    uint8_t scy = emuRAM[0xFF42]; /* SCY (Scroll Y) */
+
+    /* Get the LCDC register to determine tile data addressing mode */
+    uint8_t lcdc = emuRAM[0xFF40]; /* LCDC (LCD Control) */
+    bool tile_data_mode = (lcdc & 0x10) != 0; /* 0: 8800-97FF, 1: 8000-8FFF */
+
+    /* Iterate over the visible screen area (20x18 tiles) */
+    for (int screenY = 0; screenY < SCREEN_HEIGHT; screenY++) {
+        for (int screenX = 0; screenX < SCREEN_WIDTH; screenX++) {
+            /* Calculate the corresponding tile map coordinates */
+            int mapX = (scx + screenX) % (MAP_WIDTH * TILE_SIZE);
+            int mapY = (scy + screenY) % (MAP_HEIGHT * TILE_SIZE);
+
+            /* Calculate the tile index in the background map */
+            uint16_t mapAddr = 0x9800 + ((mapY / TILE_SIZE) * MAP_WIDTH) + (mapX / TILE_SIZE);
+            uint8_t tileIndex = emuRAM[mapAddr];
+
+            /* Calculate the address of the tile data */
+            uint16_t tileAddr;
+            if (tile_data_mode) {
+                /* Mode 1: Tiles 0-255 at 8000-8FFF */
+                tileAddr = 0x8000 + (tileIndex * 16);
+            } else {
+                /* Mode 0: Tiles 0-127 at 8800-97FF, Tiles 128-255 at 8000-87FF */
+                if (tileIndex < 128) {
+                    tileAddr = 0x9000 + (tileIndex * 16);
+                } else {
+                    tileAddr = 0x8000 + ((tileIndex - 128) * 16);
+                }
+            }
+
+            /* Calculate the pixel position within the tile */
+            int tilePixelX = mapX % TILE_SIZE;
+            int tilePixelY = mapY % TILE_SIZE;
+
+            /* Read the tile data (2 bytes per line) */
+            uint8_t byte1 = emuRAM[tileAddr + (tilePixelY * 2)];
+            uint8_t byte2 = emuRAM[tileAddr + (tilePixelY * 2) + 1];
+
+            /* Extract the color index for the pixel */
+            uint8_t bit1 = (byte1 >> (7 - tilePixelX)) & 1;
+            uint8_t bit2 = (byte2 >> (7 - tilePixelX)) & 1;
+            uint8_t colorIndex = (bit2 << 1) | bit1;
+
+            /* Map the color index to an actual color using the background palette */
+            uint8_t r, g, b;
+            uint8_t bgp = emuRAM[0xFF47]; /* BGP (Background Palette) */
+            switch ((bgp >> (colorIndex * 2)) & 0x03) {
+                case 0: r = 255; g = 255; b = 255; break; /* White */
+                case 1: r = 192; g = 192; b = 192; break; /* Light gray */
+                case 2: r = 96;  g = 96;  b = 96;  break; /* Dark gray */
+                case 3: r = 0;   g = 0;   b = 0;   break; /* Black */
+            }
+
+            /* Draw the pixel */
+            SDL_SetRenderDrawColor(rend, r, g, b, 255);
+            SDL_RenderDrawPoint(rend, screenX, screenY);
         }
     }
 
@@ -213,12 +294,12 @@ int lastpccount;
 void signal_function_call(uint16_t pc) {
     uint16_t lastpc2[64];
     lastpc2[0] = pc;
-    memcpy((uint8_t *)lastpc2 + 16, lastpc, sizeof(lastpc2) - 16);
+    memcpy((uint8_t *)lastpc2 + 2, lastpc, sizeof(lastpc2) - 2);
     memcpy(lastpc, lastpc2, 128);
 }
 uint16_t signal_function_ret() {
     uint16_t ret = lastpc[0];
-    memcpy(lastpc, lastpc + 16, sizeof(lastpc) - 16);
+    memcpy(lastpc, (uint8_t *)lastpc + 2, sizeof(lastpc) - 2);
     lastpc[63] = 0;
     return ret;
 }
@@ -907,6 +988,13 @@ int execute_instruction(void) {
             }
             return 8;
 
+        case 0x67: /* LD H, A */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                hl = (hl & 0x00FF) | (a << 8);
+            }
+            return 4;
+
         case 0x6B: /* LD H, E */
             {
                 uint8_t e = de & 0xFF;
@@ -1492,6 +1580,21 @@ int execute_instruction(void) {
             }
             return 4;
 
+        case 0xC0: /* RET NZ */
+            {
+                if (!get_flag(Z_FLAG)) {
+                    /* Pop return address from stack */
+                    uint16_t return_addr = emuRAM[sp] | (emuRAM[sp + 1] << 8);
+                    sp += 2;
+                    PMDLog("Doing ret at %02x to %02x\n", pc, return_addr);
+                    signal_function_ret();
+                    pc = return_addr;
+                    return 20;
+                } else {
+                    return 8;
+                }
+            }
+
         case 0xC1: /* POP BC */
             {
                 uint16_t value = emuRAM[sp] | (emuRAM[sp + 1] << 8);
@@ -1568,6 +1671,8 @@ int execute_instruction(void) {
                     /* Pop return address from stack */
                     uint16_t return_addr = emuRAM[sp] | (emuRAM[sp + 1] << 8);
                     sp += 2; /* Increment stack pointer */
+                    PMDLog("Doing ret at %02x to %02x\n", pc, return_addr);
+                    signal_function_ret();
                     pc = return_addr; /* Jump to return address */
                     return 20;
                 } else {
@@ -1587,6 +1692,19 @@ int execute_instruction(void) {
                 pc = signal_function_ret();
             }
             return 16;
+
+        case 0xCA: /* JP Z, a16 */
+            {
+                uint16_t address = emuRAM[pc] | (emuRAM[pc + 1] << 8);
+                pc += 2;
+
+                if (get_flag(Z_FLAG)) {
+                    pc = address;
+                    return 16;
+                } else {
+                    return 12;
+                }
+            }
 
         case 0xCB: /* PREFIX */
             {
@@ -1716,6 +1834,23 @@ int execute_instruction(void) {
             }
             return 24;
 
+        case 0xCE: /* ADC A, n8 */
+            {
+                uint8_t a = (af >> 8) & 0xFF;
+                uint8_t n8 = emuRAM[pc];
+                pc++;
+                uint8_t carry = get_flag(C_FLAG);
+                uint16_t result = a + n8 + carry;
+
+                set_flag(Z_FLAG, (result & 0xFF) == 0);
+                set_flag(N_FLAG, 0);
+                set_flag(H_FLAG, ((a & 0x0F) + (n8 & 0x0F) + carry > 0x0F));
+                set_flag(C_FLAG, result > 0xFF);
+
+                af = ((result & 0xFF) << 8) | (af & 0x00FF);
+            }
+            return 8;
+
         case 0xCF: /* RST $08 */
             {
                 /* Decrement stack pointer and push current PC onto the stack */
@@ -1734,6 +1869,8 @@ int execute_instruction(void) {
                     /* Pop return address from stack */
                     uint16_t return_addr = emuRAM[sp] | (emuRAM[sp + 1] << 8);
                     sp += 2;
+                    PMDLog("Doing ret at %02x to %02x\n", pc, return_addr);
+                    signal_function_ret();
                     pc = return_addr;
                     return 20;
                 } else {
@@ -1748,6 +1885,19 @@ int execute_instruction(void) {
                 de = value; /* Load value into HL */
             }
             return 12;
+
+        case 0xD2: /* JP NC, a16 */
+            {
+                uint16_t address = emuRAM[pc] | (emuRAM[pc + 1] << 8);
+                pc += 2;
+
+                if (!get_flag(C_FLAG)) {
+                    pc = address;
+                    return 16;
+                } else {
+                    return 12;
+                }
+            }
 
         case 0xD5: /* PUSH DE */
             {

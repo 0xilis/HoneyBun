@@ -25,11 +25,11 @@
 extern char *optarg;
 
 void show_help(void) {
-  printf("Usage: chippy <options>\n\n");
+  printf("Usage: honeybun <options>\n\n");
   printf(" -i: (required) path to the ROM\n");
   /* printf(" -v: (optional) verbose/show debug\n"); */
   printf(" -h: show usage\n");
-  printf("The Chippy emulator and the Peppermint \"frontend\" powered by it are works of Snoolie K / 0xilis.\n");
+  printf("The honeybun emulator and the Peppermint \"frontend\" powered by it are works of Snoolie K / 0xilis.\n");
 }
 
 int main(int argc, char* *argv) {
@@ -47,7 +47,7 @@ int main(int argc, char* *argv) {
   PMDLog("resourcesPath: %s\n", resourcesPath);
 
   /* Check for jumpstart / bootstrap ROM */
-  char *romPath;
+  char *romPath = NULL;
   char *resource = find_resource("boot.gb");
   if (access(resource, F_OK) == 0) {
     /* TODO: Memory leak issue since resource will not be freed */
@@ -82,9 +82,9 @@ int main(int argc, char* *argv) {
     return 1;
   }
   /* Support 128x64 later */
-  int SCREEN_WIDTH = 64;
-  int SCREEN_HEIGHT = 64;
-  int SCREEN_SCALE = 8;
+  int SCREEN_WIDTH = 160;
+  int SCREEN_HEIGHT = 144;
+  int SCREEN_SCALE = 4;
   SDL_Window *win = SDL_CreateWindow("Honey Bun",SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED, SCREEN_WIDTH * SCREEN_SCALE, SCREEN_HEIGHT * SCREEN_SCALE, SDL_WINDOW_RESIZABLE);
   if (!win) {
     PMError("error creating window: %s\n",SDL_GetError());
